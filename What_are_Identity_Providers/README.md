@@ -37,4 +37,9 @@
     Benefits of an IdP
         Centralized authentication and management
             All user sign-ins are handled in a single location, making it easier to manage access and investigate suspicious activity.
-
+        Single Sign-On (SSO)
+            One successful authentication grants access to multiple cloud services, improving usability while reducing password sprawl.
+        Stronger authentication
+            Features such as MFA and Conditional Access can be enforced uniformly across users and applications, rather than configured per system.
+        Better visibility and logging
+            Every authentication attempt generates rich identity logs, giving analysts the context needed to detect and investigate threats.
