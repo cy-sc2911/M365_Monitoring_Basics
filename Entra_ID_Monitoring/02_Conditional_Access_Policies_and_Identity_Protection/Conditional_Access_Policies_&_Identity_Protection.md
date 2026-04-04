@@ -1,0 +1,64 @@
+A successful password spray can give an attacker valid credentials. In most Entra ID tenants, the answer is a combination of two controls: Conditional Access Policies and Identity Protection. Understanding both and their blind spots is essential fro a SOC analyst because attackers actively look for gaps in these controls, and logs will tell when they find one.
+
+## Conditional Access Policies
+Think of Conditional Access Policies (CAP) as Entra ID's **if/then engine**. Every sign-in is evaluated against a set of policies, and based on the policy's findings, it either grants access, requires an additional controls (such as MFA), or blocks the request entirely.
+
+## Common Policy Examples
+
+| Policy | What it does |
+|--------|--------------|
+| Require MFA for all users | Forces MFA for every interactive sign-in. |
+| Block legacy authentication | Prevents clients that can't perform MFA. (IMAP, SMTP, older Office clients) |
+| Block sign-ins from risky locations | Restricts access from anonymous proxies, Tor exit nodes, or untrusted countries. |
+| Require compliant device | Blocks sign-ins from personal or unmanaged devices. Only devices enrolled in and meeting the company's security standards are allowed. |
+| Risk-based block | Blocks or restricts access when Identity Protection detects a high-risk sign-in or account. |
+
+It's important to mention that a policy is only as effective as scope. If it doesn't cover the right accounts and conditions, it leaves gaps that attackers actively look for.
+
+A real-world example of this is when an organization has a policy requiring MFA for all users, but excludes a handful of service accounts to avoid breaking automated workflows. If one of those accounts is later targeted in a password spray attack, there's nothing standing between the attacker and a successful login.
+
+## CAP in Sign-in Logs
+Every Sign-in log event includes an **appliedConditionalAccessPolicies** field that tells exactly which policies were evaluated, and what the outcome was for each:
+
+    appDisplayName: "One Outlook Web"
+    appId: "9199bf20-a13f-4107-85dc-02114787ef48"
+    appliedConditionalAccessPolicies: [
+        {
+        displayName: "Require MFA" // Applied Policy
+        enforcedGrantControls: [
+            "Block"
+        ]
+        enforcedSessionControls: [
+        ]
+        id: "c63499f4-64b6-4943-bfc3-52fbb641ef10"
+        result: "notApplied" // Resulted action
+        }
+    ]
+
+The possible results are:
+
+| Result | Meaning |
+|--------|---------|
+| **success** | Policy conditions were met, and controls were satisfied. |
+| **failure** | Policy blocked, or the required control wasn't satisfied. |
+| **notApplied** | Policy conditions were not met, or the user/app was not in scope. |
+| **reportOnly** | Policy is in audit mode — it would have applied, but didn't enforce. |
+
+Use the following query to start a hunt for suspicious CAP results:
+
+### List blocked sign-ins by CAP
+
+    index="task-3" sourcetype="azure:aad:signin" conditionalAccessStatus=failure
+    | spath output=policies path=appliedConditionalAccessPolicies{}
+    | mvexpand policies
+    | spath input=policies output=policy_result path=result
+    | spath input=policies output=policy_name path=displayName
+    | where policy_result="failure"
+    | stats values(policy_name) as FailedPolicies by _time, appDisplayName, userDisplayName, ipAddress, conditionalAccessStatus
+    | eval FailedPolicies=mvjoin(FailedPolicies, ", ")
+    | table _time, appDisplayName, userDisplayName, ipAddress, conditionalAccessStatus, FailedPolicies
+    | sort - _time
+
+## Identity Protection
+Conditional Access enforces your rules, while **Identity Protection** is what tells Conditional Access when something looks suspicious in the first place.
+Identity Protection is Entra ID's built in ML-based risk detection engine. It continuously analyses sign-in behaviour and user account signals, assigns risk scores, and feeds those scores into Conditional Access so risk-based policies can act on them.
